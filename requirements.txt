@@ -1,8 +1,7 @@
 fastapi
 uvicorn
-openai
+requests
 pdfplumber
 faiss-cpu
 pydantic
-requests
 python-dotenv
