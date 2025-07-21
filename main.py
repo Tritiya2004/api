@@ -2,7 +2,6 @@ import os
 import tempfile
 import requests
 import pdfplumber
-import time
 from fastapi import FastAPI, Request, Header, HTTPException
 from pydantic import BaseModel
 from utils.embedding import get_chunks_and_embeddings, search_similar_chunks
@@ -11,82 +10,50 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="LLM Query Retrieval API", version="1.0.0")
-
-# API Key for authentication
+app = FastAPI()
 API_KEY = os.getenv("API_KEY", "sk-spgw-api01-b39ff15132692a6834835a552e6f65b3")
 
 class QueryRequest(BaseModel):
     documents: str
     questions: list[str]
 
-class QueryResponse(BaseModel):
-    answers: list[str]
-
-@app.post("/hackrx/run", response_model=QueryResponse)
-async def hackrx_run(
-    req: Request, 
-    body: QueryRequest, 
-    authorization: str = Header(None)
-):
-    """
-    Process document and answer questions using LLM-powered retrieval
-    """
-    start_time = time.time()
-    
-    # Authentication check
+@app.post("/hackrx/run")
+async def hackrx_run(req: Request, body: QueryRequest, authorization: str = Header(None)):
+    # Check Bearer token
     if authorization is None or authorization != f"Bearer {API_KEY}":
         raise HTTPException(status_code=401, detail="Unauthorized.")
-    
+
+    # Download and parse PDF
+    pdf_url = body.documents
     try:
-        # Download and parse PDF
-        print(f"Downloading PDF from: {body.documents}")
-        response = requests.get(body.documents, timeout=30)
-        response.raise_for_status()
-        
-        # Save to temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            tmp.write(response.content)
-            tmp_path = tmp.name
-
-        # Extract chunks and create embeddings
-        print("Processing PDF and creating embeddings...")
-        chunks, vectors = get_chunks_and_embeddings(tmp_path)
-        
-        answers = []
-        print(f"Processing {len(body.questions)} questions...")
-        
-        for i, question in enumerate(body.questions):
-            print(f"Processing question {i+1}: {question[:50]}...")
-            
-            # Find relevant chunks
-            relevant_chunks = search_similar_chunks(question, chunks, vectors)
-            
-            # Generate answer using LLM
-            answer = generate_answer(question, relevant_chunks)
-            answers.append(answer)
-        
-        # Cleanup
-        os.unlink(tmp_path)
-        
-        end_time = time.time()
-        print(f"Total processing time: {end_time - start_time:.2f} seconds")
-        
-        return QueryResponse(answers=answers)
-        
-    except requests.exceptions.RequestException as e:
-        print(f"Error downloading PDF: {e}")
-        raise HTTPException(status_code=400, detail=f"Failed to download document: {str(e)}")
-    
+        r = requests.get(pdf_url, timeout=30)
+        r.raise_for_status()
     except Exception as e:
-        print(f"Error processing request: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to download PDF: {str(e)}")
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "service": "LLM Query Retrieval API"}
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(r.content)
+        tmp_path = tmp.name
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    try:
+        chunks, vectors = get_chunks_and_embeddings(tmp_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process PDF: {str(e)}")
+    finally:
+        # Clean up temp file
+        os.unlink(tmp_path)
+
+    answers = []
+    for question in body.questions:
+        try:
+            best_chunks = search_similar_chunks(question, chunks, vectors)
+            answer = generate_answer(question, best_chunks)
+            answers.append(answer)
+        except Exception as e:
+            answers.append(f"Error processing question: {str(e)}")
+
+    return {"answers": answers}
+
+@app.get("/")
+async def root():
+    return {"message": "LLM Query API is running"}
