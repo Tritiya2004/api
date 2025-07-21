@@ -1,20 +1,21 @@
 import requests
-
-GPT_API_URL = "https://dev-api.healthrx.co.in/sp-gw/api/openai/v1/chat/completions"
-API_TOKEN = "sk-spgw-api01-b39ff15132692a6834835a552e6f65b3"
+import os
 
 def generate_answer(question, contexts):
-    prompt = f"""You are a helpful assistant. Use ONLY the provided context to answer the question.
+    prompt = f"""Use the below context to answer the question accurately.
 
 Context:
 {" ".join(contexts)}
 
 Question: {question}
 Answer:"""
+
     headers = {
-        "Authorization": f"Bearer {API_TOKEN}",
-        "Content-Type": "application/json"
+        "Authorization": f"Bearer {os.getenv('API_TOKEN')}",
+        "Content-Type": "application/json",
+        "Subscription-Key": os.getenv('SUBSCRIPTION_KEY')
     }
+
     payload = {
         "messages": [
             {"role": "system", "content": "You are a helpful assistant."},
@@ -22,6 +23,11 @@ Answer:"""
         ],
         "model": "gpt-4o"
     }
-    resp = requests.post(GPT_API_URL, headers=headers, json=payload, timeout=30)
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"].strip()
+
+    response = requests.post(
+        "https://dev-api.healthrx.co.in/sp-gw/api/openai/v1/chat/completions",
+        headers=headers, 
+        json=payload
+    )
+    response.raise_for_status()
+    return response.json()["choices"][0]["message"]["content"].strip()
