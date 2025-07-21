@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = FastAPI()
-API_KEY = "your_internal_api_key"   # Replace with your secret
+API_KEY = "sk-spgw-api01-b39ff15132692a6834835a552e6f65b3"   # Replace with your secret
 
 class QueryRequest(BaseModel):
     documents: str
