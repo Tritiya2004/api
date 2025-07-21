@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+openai
+pdfplumber
+faiss-cpu
+pydantic
+requests
+python-dotenv
