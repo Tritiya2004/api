@@ -61,4 +61,32 @@ async def hackrx_run(
             
             # Find relevant chunks
             relevant_chunks = search_similar_chunks(question, chunks, vectors)
-      
+            
+            # Generate answer using LLM
+            answer = generate_answer(question, relevant_chunks)
+            answers.append(answer)
+        
+        # Cleanup
+        os.unlink(tmp_path)
+        
+        end_time = time.time()
+        print(f"Total processing time: {end_time - start_time:.2f} seconds")
+        
+        return QueryResponse(answers=answers)
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Error downloading PDF: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to download document: {str(e)}")
+    
+    except Exception as e:
+        print(f"Error processing request: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "service": "LLM Query Retrieval API"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
