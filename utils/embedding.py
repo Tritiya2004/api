@@ -1,40 +1,59 @@
 import requests
 import pdfplumber
-import faiss
 import numpy as np
 import os
+import hashlib
+from typing import List, Tuple
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
-# Remove: import openai
+# External API configuration
+EMBEDDING_API_URL = "https://dev-api.healthrx.co.in/sp-gw/api/openai/v1/embeddings"
+API_TOKEN = os.getenv("API_TOKEN", "sk-spgw-api01-key")
+SUBSCRIPTION_KEY = os.getenv("SUBSCRIPTION_KEY", "")
 
-def get_chunks_and_embeddings(pdf_path, chunk_size=400):
+def get_chunks_and_embeddings(pdf_path: str, chunk_size: int = 500) -> Tuple[List[str], np.ndarray]:
+    """
+    Extract text from PDF, chunk it, and create embeddings
+    """
+    print("Extracting text from PDF...")
+    
+    # Extract text from PDF
     with pdfplumber.open(pdf_path) as pdf:
-        text = " ".join(page.extract_text() or "" for page in pdf.pages)
+        full_text = ""
+        for page in pdf.pages:
+            text = page.extract_text()
+            if text:
+                full_text += text + " "
+    
+    print(f"Extracted {len(full_text)} characters from PDF")
     
     # Chunk the text
-    chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+    chunks = create_text_chunks(full_text, chunk_size)
+    print(f"Created {len(chunks)} chunks")
     
-    # Use external API for embeddings instead of openai.Embedding.create
-    embeddings = []
-    for chunk in chunks:
-        embedding = get_embedding_from_external_api(chunk)
-        embeddings.append(embedding)
+    # Create embeddings using TF-IDF (fallback) or external API
+    try:
+        if SUBSCRIPTION_KEY:
+            embeddings = create_embeddings_external_api(chunks)
+        else:
+            embeddings = create_tfidf_embeddings(chunks)
+    except Exception as e:
+        print(f"Failed to create embeddings via API, falling back to TF-IDF: {e}")
+        embeddings = create_tfidf_embeddings(chunks)
     
-    embeddings = np.array(embeddings).astype("float32")
     return chunks, embeddings
 
-def get_embedding_from_external_api(text):
-    """Get embeddings using external API instead of OpenAI directly"""
-    # You may need to implement this based on available embedding endpoint
-    # For now, return a dummy embedding or implement with available service
-    pass
-
-def search_similar_chunks(query, chunks, embeddings, top_k=3):
-    # Get query embedding using external API
-    q_emb = get_embedding_from_external_api(query)
-    q_emb = np.array(q_emb).astype("float32").reshape(1,-1)
+def create_text_chunks(text: str, chunk_size: int = 500) -> List[str]:
+    """
+    Split text into overlapping chunks
+    """
+    words = text.split()
+    chunks = []
+    overlap = chunk_size // 4  # 25% overlap
     
-    # Build FAISS index
-    index = faiss.IndexFlatL2(embeddings.shape[1])
-    index.add(embeddings)
-    D, I = index.search(q_emb, top_k)
-    return [chunks[i] for i in I[0]]
+    for i in range(0, len(words), chunk_size - overlap):
+        chunk_words = words[i:i + chunk_size]
+        chunk = " ".join(chunk_words)
+        if len(chunk.strip()) > 50:  # Only include meaningful chunks
+            chunks.append(chunk.strip())
